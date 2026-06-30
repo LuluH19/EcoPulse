@@ -5,40 +5,20 @@ const PLAUSIBLE_MIN_GCO2 = 1;
 const PLAUSIBLE_MAX_GCO2 = 1200;
 const WINDOW_HOURS = 24;
 
-export interface RtePoint {
+export interface CarbonPoint {
   time: string;
   co2: number;
 }
 
 function extractTimestamp(record: Record<string, unknown>): string | undefined {
-  if (typeof record.date_heure === "string") return record.date_heure;
-  if (typeof record.timestamp === "string") return record.timestamp;
-  if (typeof record.datetime === "string") return record.datetime;
-  if (typeof record.date === "string" && typeof record.heure === "string") {
-    return `${record.date}T${record.heure}`;
-  }
-  if (typeof record.date === "string") return record.date;
-  return undefined;
-}
-
-function toNumber(value: unknown): number | undefined {
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value : undefined;
-  }
-  if (typeof value === "string") {
-    const parsed = Number(value.replace(",", "."));
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-  return undefined;
+  return typeof record.datetime === "string" ? record.datetime : undefined;
 }
 
 function extractCo2(record: Record<string, unknown>): number | undefined {
-  return (
-    toNumber(record.taux_co2) ??
-    toNumber(record.value) ??
-    toNumber(record.co2) ??
-    toNumber(record.carbonIntensity)
-  );
+  return typeof record.carbonIntensity === "number" &&
+    Number.isFinite(record.carbonIntensity)
+    ? record.carbonIntensity
+    : undefined;
 }
 
 function formatTime(date: Date): string {
@@ -48,14 +28,12 @@ function formatTime(date: Date): string {
 }
 
 /**
- * Nettoie et standardise un flux brut de données d'intensité carbone réseau,
- * quelle que soit la source (RTE/ODRÉ ou Electricity Maps) : extrait
- * horodatage + taux de CO2 (plusieurs noms de champs possibles selon la
- * source), écarte les points absents/non numériques/hors plage
- * plausible/hors fenêtre 24h, et trie le résultat par ordre chronologique
- * croissant.
+ * Nettoie et standardise le flux brut d'intensité carbone réseau
+ * (Electricity Maps, `history[].{datetime,carbonIntensity}`) : écarte les
+ * points absents/non numériques/hors plage plausible/hors fenêtre 24h, et
+ * trie le résultat par ordre chronologique croissant.
  */
-export function parseRteData(raw: unknown): RtePoint[] {
+export function parseCarbonData(raw: unknown): CarbonPoint[] {
   if (!Array.isArray(raw)) {
     return [];
   }

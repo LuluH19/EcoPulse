@@ -7,7 +7,7 @@ import { CarbonChart } from "@/components/carbon-chart";
 import { ImpactSimulator } from "@/components/impact-simulator";
 import { SavedDays } from "@/components/saved-days";
 import type { SavedDay } from "@/lib/storage/storageAdapter";
-import type { CarbonLive } from "@/lib/rteSchema";
+import type { CarbonLive } from "@/lib/carbonSchema";
 
 export default function Home() {
   const [carbonLive, setCarbonLive] = useState<CarbonLive | null>(null);

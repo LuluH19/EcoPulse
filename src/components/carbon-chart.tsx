@@ -9,7 +9,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { CarbonLive } from "@/lib/rteSchema";
+import type { CarbonLive } from "@/lib/carbonSchema";
 
 interface CarbonChartProps {
   history: CarbonLive["history"];

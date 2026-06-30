@@ -9,8 +9,8 @@ L'application affiche l'intensité carbone du réseau électrique français en t
 - Affichage de l'intensité carbone actuelle du réseau français
 - Visualisation de l'évolution sur 24 heures
 - Simulateur d'impact carbone selon différents usages
-- Sauvegarde locale des journées simulées
-- Gestion d'un fallback si l'API RTE est indisponible
+- Sauvegarde des journées simulées (Supabase, identifiant anonyme par cookie)
+- Gestion d'un fallback si l'API Electricity Maps est indisponible
 - Validation des données externes via des schémas Zod
 - Interface simple et responsive pour consulter rapidement l'empreinte carbone
 
@@ -66,14 +66,14 @@ src/
   lib/              # schémas, stockage local, utilitaires
   skills/           # logique métier et services
 scripts/
-  deterministic/    # scripts de parsing et traitement des données RTE
+  deterministic/    # scripts de parsing et traitement des données carbone
 ```
 
 ## Données et sources
 
-L'application récupère les données via l'API RTE Eco2mix et valide les réponses avec des schémas Zod avant exploitation.
+L'application récupère les données via l'API Electricity Maps et valide les réponses avec des schémas Zod avant exploitation.
 
 ## Notes importantes
 
 - Les règles métier et calculs carbone sont centralisés dans les services du dossier `src/skills/` et les scripts déterministes.
-- Les données sauvegardées sont stockées localement dans le navigateur via `localStorage`.
+- Les journées simulées sont stockées dans Supabase, identifiées par un UUID anonyme en cookie (`ecopulse_anon_id`) — pas d'auth, pas de compte.

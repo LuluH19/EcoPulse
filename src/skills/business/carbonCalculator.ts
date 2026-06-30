@@ -1,7 +1,7 @@
 import { CAR_GCO2_PER_KM } from "@/config/emissions";
 import { GRID_CLASSIFICATION_THRESHOLDS } from "@/config/grid-thresholds";
 import { USAGE_PROFILES, type UsageKey } from "@/config/usage-profiles";
-import type { GridClassification, HistoryStats, RtePoint } from "@/lib/rteSchema";
+import type { CarbonPoint, GridClassification, HistoryStats } from "@/lib/carbonSchema";
 
 export interface CarbonResult {
   gco2eq: number;
@@ -68,7 +68,7 @@ export function classifyGridIntensity(co2: number): GridClassification {
 }
 
 /** Min / max / moyenne d'une série de points 24h (pour l'annotation du graphique). */
-export function summarizeHistory(history: RtePoint[]): HistoryStats {
+export function summarizeHistory(history: CarbonPoint[]): HistoryStats {
   if (history.length === 0) {
     return { min: 0, max: 0, average: 0 };
   }

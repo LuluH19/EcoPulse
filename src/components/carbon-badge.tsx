@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import type { CarbonLive, GridClassification } from "@/lib/rteSchema";
+import type { CarbonLive, GridClassification } from "@/lib/carbonSchema";
 
 interface ClassificationMeta {
   label: string;

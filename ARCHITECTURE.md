@@ -1,31 +1,32 @@
 # EcoPulse — Architecture
 
 Vue d'ensemble de l'architecture : comment les données circulent depuis l'API
-RTE jusqu'à l'écran, et où vit chaque responsabilité. Principe directeur :
-**aucune logique métier hors des skills et des scripts déterministes.**
+Electricity Maps jusqu'à l'écran, et où vit chaque responsabilité. Principe
+directeur : **aucune logique métier hors des skills et des scripts
+déterministes.**
 
 ---
 
-## 1. Schéma de flux (RTE → écran)
+## 1. Schéma de flux (Electricity Maps → écran)
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│                            API RTE Éco2mix (ODRÉ)                            │
-│         eco2mix-national-tr · public · JSON · rafraîchi /15 min              │
+│                       API Electricity Maps (carbon-intensity/history)        │
+│              zone=FR · auth-token · JSON · rafraîchi /heure                  │
 └───────────────────────────────┬──────────────────────────────────────────--┘
-                                 │ HTTP GET (date_heure, taux_co2)
+                                 │ HTTP GET (datetime, carbonIntensity)
                                  ▼
 ┌────────────────────────────────────────────────────────────────────────────┐
 │  SKILL TRANSVERSE — src/skills/shared/apiFetcher.ts                          │
 │  fetchValidated() : timeout · cache TTL 15 min · validation Zod · fallback   │
 └───────────────────────────────┬──────────────────────────────────────────--┘
-                                 │ RteResponse (validé)
+                                 │ ElectricityMapsHistory (validé)
                                  ▼
 ┌────────────────────────────────────────────────────────────────────────────┐
-│  SCRIPT DÉTERMINISTE — scripts/deterministic/parseRteData.ts                 │
+│  SCRIPT DÉTERMINISTE — scripts/deterministic/parseCarbonData.ts              │
 │  fenêtre 24 h · rejet null/0/aberrants · tri croissant → [{ time, co2 }]     │
 └───────────────────────────────┬──────────────────────────────────────────--┘
-                                 │ RtePoint[]  (ou RTE_FALLBACK si vide)
+                                 │ CarbonPoint[]  (ou CARBON_FALLBACK si vide)
                                  ▼
 ┌────────────────────────────────────────────────────────────────────────────┐
 │  SKILL MÉTIER — src/skills/business/carbonCalculator.ts                      │
@@ -57,9 +58,9 @@ RTE jusqu'à l'écran, et où vit chaque responsabilité. Principe directeur :
 
 | Couche                | Fichier(s)                                   | Responsabilité unique                                  | Ne fait JAMAIS                          |
 |-----------------------|----------------------------------------------|--------------------------------------------------------|-----------------------------------------|
-| Accès données         | `src/skills/shared/apiFetcher.ts`            | Réseau robuste : fetch, timeout, cache, Zod, fallback  | Calcul métier, parsing spécifique RTE   |
-| Contrats              | `src/lib/rteSchema.ts`                        | Schémas Zod entrée (RTE) + sortie (`CarbonLive`)       | Logique, I/O                            |
-| Nettoyage             | `scripts/deterministic/parseRteData.ts`      | Transformer le flux brut en série propre 24 h          | Appel réseau, classification            |
+| Accès données         | `src/skills/shared/apiFetcher.ts`            | Réseau robuste : fetch, timeout, cache, Zod, fallback  | Calcul métier, parsing spécifique Electricity Maps |
+| Contrats              | `src/lib/electricityMapsSchema.ts`, `src/lib/carbonSchema.ts` | Schémas Zod entrée (Electricity Maps) + sortie (`CarbonLive`) | Logique, I/O                     |
+| Nettoyage             | `scripts/deterministic/parseCarbonData.ts`   | Transformer le flux brut en série propre 24 h          | Appel réseau, classification            |
 | Métier                | `src/skills/business/carbonCalculator.ts`    | Formules CO₂, catalogue d'usages, classification       | I/O, parsing, accès réseau              |
 | Orchestration         | `src/app/api/carbon/live/route.ts`           | Câbler les couches dans l'ordre, gérer le fallback     | Réimplémenter une formule ou un parsing |
 | Présentation          | `src/app/page.tsx`, `src/components/*`       | Affichage, interactions, persistance LocalStorage      | Tout calcul métier (CO₂, moyenne, etc.) |
@@ -81,14 +82,15 @@ ecopulse/
 │   ├── components/                    # KPI, chart, simulateur (UI pure)
 │   ├── config/                        # valeurs business centralisées (J3)
 │   ├── lib/
-│   │   └── rteSchema.ts               # contrats Zod
+│   │   ├── electricityMapsSchema.ts   # contrat Zod entrée (Electricity Maps)
+│   │   └── carbonSchema.ts            # contrat Zod sortie (CarbonLive)
 │   └── skills/
 │       ├── business/carbonCalculator.ts   # SKILL MÉTIER
 │       └── shared/apiFetcher.ts           # SKILL TRANSVERSE (réutilisable)
 └── scripts/
     └── deterministic/
-        ├── parseRteData.ts                # SCRIPT DÉTERMINISTE
-        └── __tests__/parseRteData.test.ts # tests Vitest
+        ├── parseCarbonData.ts                # SCRIPT DÉTERMINISTE
+        └── __tests__/parseCarbonData.test.ts # tests Vitest
 ```
 
 ---
@@ -96,8 +98,8 @@ ecopulse/
 ## 4. Dépendances entre modules (sens autorisé)
 
 ```
-route.ts ──→ apiFetcher.ts ──→ rteSchema.ts (zod)
-route.ts ──→ parseRteData.ts
+route.ts ──→ apiFetcher.ts ──→ electricityMapsSchema.ts (zod)
+route.ts ──→ parseCarbonData.ts
 route.ts ──→ carbonCalculator.ts
 page.tsx ──→ route.ts (via fetch HTTP, pas d'import direct)
 ```
@@ -107,17 +109,18 @@ Règles de dépendance :
   passe par l'API HTTP. Frontière nette back / front.
 - Les **skills ne s'importent pas entre eux** : `carbonCalculator` et
   `apiFetcher` sont indépendants (couplage faible, testables isolément).
-- `parseRteData` ne dépend de **rien** (pur, zéro import projet) → c'est ce qui
-  le rend déterministe et trivial à tester.
-- Les **schémas Zod** (`rteSchema`) sont la seule frontière de confiance : tout
-  ce qui entre depuis le réseau y passe.
+- `parseCarbonData` ne dépend de **rien** (pur, zéro import projet) → c'est ce
+  qui le rend déterministe et trivial à tester.
+- Les **schémas Zod** (`electricityMapsSchema` en entrée, `carbonSchema` en
+  sortie) sont la seule frontière de confiance : tout ce qui entre depuis le
+  réseau y passe.
 
 ---
 
 ## 5. Stratégie de cache & fraîcheur
 
-- **Cache mémoire** (`apiFetcher`) : TTL 15 min, aligné sur le rafraîchissement
-  RTE. Évite de saturer le quota (50 000 req/mois).
+- **Cache mémoire** (`apiFetcher`) : TTL 15 min. Évite de saturer le quota
+  (palier gratuit) Electricity Maps.
 - **Revalidation Next.js** : `export const revalidate = 900` sur la route
   (15 min), cohérent avec le cache applicatif.
 - Conséquence : au pire, la donnée affichée a 15 min de retard — acceptable pour
@@ -151,9 +154,7 @@ Règles :
 
 - **Cache carbone en DB** : porter le cache mémoire de l'`apiFetcher` vers une
   table `carbon_cache` (TTL partagé entre instances). Identifié, non livré J3.
-- **OAuth2 RTE** : bascule vers `data.rte-france.com` → n'impacte que les
-  `headers`/`init` de `fetchValidated`. Pipeline inchangé.
 - **LocalStorageAdapter hors-ligne** : seconde implémentation de
   `StorageAdapter`, sans impact sur le reste.
-- **Vue régionale** : `eco2mix-regional-tr` suit le même contrat → paramètre de
-  région au fetcher + schéma Zod dédié.
+- **Vue régionale** : Electricity Maps expose d'autres zones que `FR` au même
+  contrat → paramètre de zone au fetcher, pas de changement de schéma.

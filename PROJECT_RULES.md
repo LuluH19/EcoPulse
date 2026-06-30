@@ -11,7 +11,8 @@ en connaissance de cause).
 ## 1. Domaine & vocabulaire
 
 - **Intensité carbone** : émissions de CO₂ générées par la production
-  d'électricité, exprimées en **gCO₂eq/kWh**. Champ source RTE : `taux_co2`.
+  d'électricité, exprimées en **gCO₂eq/kWh**. Champ source Electricity Maps :
+  `carbonIntensity`.
 - **Empreinte d'un usage** : CO₂ émis par une consommation électrique donnée à
   un instant T, en gCO₂eq.
 - **Réseau "vert / modéré / élevé"** : classification qualitative de l'intensité
@@ -21,24 +22,20 @@ en connaissance de cause).
 
 ---
 
-## 2. Source de données : RTE Éco2mix
+## 2. Source de données : Electricity Maps
 
-- Dataset : `eco2mix-national-tr` (national, temps réel), portail **ODRÉ /
-  Opendatasoft**, **public et sans authentification**.
-- Endpoint v2.1 :
-  `https://odre.opendatasoft.com/api/explore/v2.1/catalog/datasets/eco2mix-national-tr/records`
-- Rafraîchissement source : toutes les **15 minutes**.
-- Pas quart d'heure → jusqu'à **96 points / 24 h** (on requête `limit=288` par
-  marge de sécurité, tri `date_heure desc`).
-- Quota : 50 000 appels / utilisateur / mois → le cache (TTL 15 min) est
-  **obligatoire**, pas optionnel.
-- Champs consommés (et eux seuls) : `date_heure` (ISO),
-  `taux_co2` (entier g/kWh, **nullable**).
-
-> Décision d'architecture : l'API publique ODRÉ est retenue plutôt que le
-> portail `data.rte-france.com` (OAuth2 `client_credentials`), plus lourd, sans
-> bénéfice pour un dashboard national temps réel. Le skill `apiFetcher` reste
-> agnostique : un passage à l'OAuth2 ne change que les `headers`, pas le pipeline.
+- Endpoint : `GET https://api.electricitymap.org/v3/carbon-intensity/history?zone=FR`
+- Authentification : header `auth-token: <ELECTRICITY_MAPS_API_KEY>` (clé
+  serveur uniquement, jamais exposée au client — voir `.env.example`).
+- Rafraîchissement source : horaire.
+- Réponse : `history[]` avec jusqu'à 24 points (un par heure glissante).
+- Quota : palier gratuit limité → le cache (TTL 15 min) est **obligatoire**,
+  pas optionnel.
+- Champs consommés (et eux seuls) : `datetime` (ISO 8601, UTC),
+  `carbonIntensity` (nombre, g/kWh).
+- Si `ELECTRICITY_MAPS_API_KEY` n'est pas configurée, la source live est
+  désactivée et l'app sert directement `CARBON_FALLBACK` (HTTP 200,
+  `source: 'fallback'`) — jamais d'erreur ni d'écran blanc.
 
 ---
 
@@ -79,16 +76,18 @@ puis 3.1
 
 ---
 
-## 4. Nettoyage du flux RTE (`scripts/deterministic/parseRteData.ts`)
+## 4. Nettoyage du flux carbone (`scripts/deterministic/parseCarbonData.ts`)
 
 Composant le plus critique : déterministe, pur, testé en isolation. Entrée =
-échantillons bruts ; sortie = `[{ time: "HH:mm", co2: number }]` trié croissant.
+échantillons bruts Electricity Maps ; sortie = `[{ time: "HH:mm", co2: number }]`
+trié croissant.
 
 ### 4.1 Extraction
-- Horodatage, par ordre de priorité : `date_heure` → `timestamp` →
-  `date + heure` → `date`.
-- Valeur CO₂, par ordre de priorité : `taux_co2` → `value` → `co2`.
-- Conversion numérique tolérante (gère `"44"`, `"44,0"` → 44).
+- Horodatage : `datetime` (ISO 8601, UTC).
+- Valeur CO₂ : `carbonIntensity` (nombre).
+- Tout point dont l'un des deux champs est absent ou du mauvais type est
+  écarté (pas de conversion tolérante de chaîne : Electricity Maps renvoie du
+  JSON typé, contrairement à l'ancien flux RTE/ODRÉ).
 
 ### 4.2 Règles de rejet (un point écarté n'est JAMAIS affiché)
 Un point est rejeté si :
@@ -110,7 +109,7 @@ Un point est rejeté si :
 ### 5.1 Pipeline (ordre imposé, aucune logique inline)
 ```
 apiFetcher.fetchValidated   (fetch + Zod + cache + timeout)
-  → parseRteData            (nettoyage déterministe 24 h)
+  → parseCarbonData         (nettoyage déterministe 24 h)
     → classifyGridIntensity (classification métier)
 ```
 
@@ -131,13 +130,14 @@ apiFetcher.fetchValidated   (fetch + Zod + cache + timeout)
 
 L'application ne tombe jamais en panne visible.
 
-| Situation                                   | Comportement                                   | `source`   | HTTP |
-|---------------------------------------------|------------------------------------------------|------------|------|
-| API RTE OK, données exploitables            | données live                                   | `live`     | 200  |
-| API RTE OK mais 0 point valide après nettoyage | `RTE_FALLBACK`                              | `fallback` | 200  |
-| API RTE en panne / timeout / payload invalide | `RTE_FALLBACK`                              | `fallback` | 200  |
+| Situation                                          | Comportement      | `source`   | HTTP |
+|-----------------------------------------------------|--------------------|------------|------|
+| Clé absente                                          | `CARBON_FALLBACK`  | `fallback` | 200  |
+| API Electricity Maps OK, données exploitables        | données live       | `live`     | 200  |
+| API Electricity Maps OK mais 0 point valide après nettoyage | `CARBON_FALLBACK` | `fallback` | 200  |
+| API Electricity Maps en panne / timeout / payload invalide | `CARBON_FALLBACK` | `fallback` | 200  |
 
-- `RTE_FALLBACK` est une courbe statique **propre et plausible** (6 points type).
+- `CARBON_FALLBACK` est une courbe statique **propre et plausible** (6 points type).
 - Le front DOIT signaler visuellement le mode `fallback` (badge "données de
   secours") — ne jamais faire passer du fallback pour du live.
 
@@ -203,10 +203,12 @@ L'application ne tombe jamais en panne visible.
 
 - **Nuit / heures creuses** : intensité souvent < 50 g → classe `vert`, normal.
 - **Pointe gaz** : intensité qui grimpe > 150 g → classe `eleve`, normal.
-- **Trou de données RTE** (maintenance) : `taux_co2` à `null` sur plusieurs pas
-  → points rejetés ; si tout le lot est rejeté → fallback.
-- **Décalage horaire** : `date_heure` est en heure source RTE ; l'affichage
-  `HH:mm` suit le fuseau du runtime. À surveiller si déploiement multi-région.
+- **Trou de données Electricity Maps** (maintenance) : points absents ou
+  `carbonIntensity` non numérique sur plusieurs pas → points rejetés ; si tout
+  le lot est rejeté → fallback.
+- **Décalage horaire** : `datetime` Electricity Maps est en UTC (ISO 8601) ;
+  l'affichage `HH:mm` suit le fuseau du runtime. À surveiller si déploiement
+  multi-région.
 - **Durée de simulation = 0 h** : empreinte = 0, autorisé (pas une erreur).
 - **Valeurs négatives** (energyKwh, hours, intensité) : **exception levée**,
   jamais de calcul silencieux sur entrée invalide.
