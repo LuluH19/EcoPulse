@@ -13,7 +13,7 @@ import {
 } from "@/skills/business/carbonCalculator";
 import { USAGE_PROFILES, type UsageKey } from "@/config/usage-profiles";
 import { DURATION_SLIDER_BOUNDS } from "@/config/duration-slider";
-import type { SavedDay } from "@/lib/storage";
+import type { NewSavedDay } from "@/lib/storage/storageAdapter";
 
 const CATALOG_KEYS = Object.keys(USAGE_PROFILES) as UsageKey[];
 
@@ -40,12 +40,12 @@ interface ActiveEntry {
 
 interface ImpactSimulatorProps {
   currentIntensity: number;
-  onSave: (day: SavedDay) => void;
+  onSaved: () => void;
 }
 
 export function ImpactSimulator({
   currentIntensity,
-  onSave,
+  onSaved,
 }: ImpactSimulatorProps) {
   const [catalogState, setCatalogState] = useState<
     Record<UsageKey, CatalogState>
@@ -59,6 +59,8 @@ export function ImpactSimulator({
   const [isAdding, setIsAdding] = useState(false);
   const [newLabel, setNewLabel] = useState("");
   const [newWatts, setNewWatts] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const catalogEntries: ActiveEntry[] = CATALOG_KEYS.filter(
     (key) => catalogState[key].active
@@ -134,11 +136,10 @@ export function ImpactSimulator({
     setIsAdding(false);
   }
 
-  function handleSave(): void {
+  async function handleSave(): Promise<void> {
     if (activeEntries.length === 0) return;
-    const day: SavedDay = {
-      id: crypto.randomUUID(),
-      savedAt: new Date().toISOString(),
+
+    const payload: NewSavedDay = {
       intensityAtSave: currentIntensity,
       totalGco2eq: total.gco2eq,
       devices: activeEntries.map((entry) => ({
@@ -149,7 +150,25 @@ export function ImpactSimulator({
         custom: entry.custom,
       })),
     };
-    onSave(day);
+
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      const response = await fetch("/api/days", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      onSaved();
+    } catch (error) {
+      console.error("[impact-simulator] failed to save day", error);
+      setSaveError("Impossible d'enregistrer cette journée. Réessayez.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -214,8 +233,13 @@ export function ImpactSimulator({
         </p>
       </div>
 
-      <Button onClick={handleSave} disabled={activeEntries.length === 0}>
-        Enregistrer
+      {saveError && <p className="text-sm text-destructive">{saveError}</p>}
+
+      <Button
+        onClick={handleSave}
+        disabled={activeEntries.length === 0 || isSaving}
+      >
+        {isSaving ? "Enregistrement..." : "Enregistrer"}
       </Button>
     </div>
   );

@@ -1,17 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CarbonBadge } from "@/components/carbon-badge";
 import { CarbonChart } from "@/components/carbon-chart";
 import { ImpactSimulator } from "@/components/impact-simulator";
 import { SavedDays } from "@/components/saved-days";
-import {
-  deleteSavedDay,
-  loadSavedDays,
-  saveSavedDay,
-  type SavedDay,
-} from "@/lib/storage";
+import type { SavedDay } from "@/lib/storage/storageAdapter";
 import type { CarbonLive } from "@/lib/rteSchema";
 
 export default function Home() {
@@ -19,13 +14,26 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [savedDays, setSavedDays] = useState<SavedDay[]>([]);
+  const [savedDaysError, setSavedDaysError] = useState<string | null>(null);
 
-  // Lu uniquement après montage : le serveur n'a pas accès au LocalStorage,
-  // donc l'initialiser dès le premier rendu casserait l'hydratation SSR.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronisation ponctuelle depuis le LocalStorage, illisible côté SSR
-    setSavedDays(loadSavedDays());
+  const refreshSavedDays = useCallback(() => {
+    fetch("/api/days")
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json() as Promise<SavedDay[]>;
+      })
+      .then((data) => {
+        setSavedDays(data);
+        setSavedDaysError(null);
+      })
+      .catch((error: Error) => {
+        setSavedDaysError(error.message);
+      });
   }, []);
+
+  useEffect(() => {
+    refreshSavedDays();
+  }, [refreshSavedDays]);
 
   useEffect(() => {
     let isMounted = true;
@@ -47,14 +55,6 @@ export default function Home() {
       isMounted = false;
     };
   }, []);
-
-  function handleSaveDay(day: SavedDay): void {
-    setSavedDays(saveSavedDay(day));
-  }
-
-  function handleDeleteDay(id: string): void {
-    setSavedDays(deleteSavedDay(id));
-  }
 
   return (
     <main className="mx-auto flex max-w-4xl flex-col gap-6 p-6">
@@ -94,7 +94,7 @@ export default function Home() {
           {carbonLive && (
             <ImpactSimulator
               currentIntensity={carbonLive.current.co2}
-              onSave={handleSaveDay}
+              onSaved={refreshSavedDays}
             />
           )}
         </CardContent>
@@ -105,7 +105,10 @@ export default function Home() {
           <CardTitle>Journées enregistrées</CardTitle>
         </CardHeader>
         <CardContent>
-          <SavedDays days={savedDays} onDelete={handleDeleteDay} />
+          {savedDaysError && (
+            <p className="text-destructive">Erreur : {savedDaysError}</p>
+          )}
+          <SavedDays days={savedDays} onDeleted={refreshSavedDays} />
         </CardContent>
       </Card>
     </main>
