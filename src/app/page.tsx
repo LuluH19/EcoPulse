@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { calculateEmissions, toKilograms } from "@/lib/carbonCalculator";
+import { calculateEmissions, toKilograms } from "@/skills/business/carbonCalculator";
 import type { CarbonIntensityPoint } from "@/lib/types";
 
 const HISTORY_KEY = "ecopulse:simulation-history";
@@ -26,7 +26,6 @@ interface SimulationEntry {
 }
 
 function loadHistory(): SimulationEntry[] {
-  if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(HISTORY_KEY);
     return raw ? (JSON.parse(raw) as SimulationEntry[]) : [];
@@ -40,11 +39,18 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [kWhInput, setKWhInput] = useState("1");
-  const [history, setHistory] = useState<SimulationEntry[]>(loadHistory);
+  const [history, setHistory] = useState<SimulationEntry[]>([]);
+
+  // Read from localStorage only after mount: the server has no access to it,
+  // so seeding this from the initial render would mismatch the SSR markup.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time sync from localStorage, unreadable during SSR
+    setHistory(loadHistory());
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
-    fetch("/api/carbon-intensity")
+    fetch("/api/carbon/live")
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json() as Promise<CarbonIntensityPoint[]>;
