@@ -143,14 +143,24 @@ L'application ne tombe jamais en panne visible.
 
 ---
 
-## 7. Persistance des simulations (front, J3)
+## 7. Persistance des simulations (front + DB, J3)
 
-- Stockage : **LocalStorage** uniquement (pas de DB, pas d'auth, pas de compte).
-- Une simulation enregistrée = **une journée**, qui contient le détail des
-  appareils sélectionnés. Forme :
+- Stockage : **Supabase (Postgres managé)**, pas de LocalStorage pour les
+  données livrées. L'accès se fait derrière une interface `StorageAdapter`
+  (voir ARCHITECTURE.md §6) : une seule implémentation au J3,
+  `SupabaseAdapter`. L'interface existe pour prouver le découplage et permettre
+  d'ajouter un `LocalStorageAdapter` hors-ligne plus tard sans toucher au reste.
+- **Pas d'auth, pas de compte, pas de login.** Pour retrouver ses journées,
+  l'utilisateur est identifié par un **identifiant anonyme** : un UUID v4
+  généré côté client au premier passage et conservé dans un cookie
+  (`ecopulse_anon_id`, durée 1 an, SameSite=Lax). Cet UUID est la clé
+  d'appartenance des journées en DB. Il ne contient aucune donnée personnelle
+  et n'est relié à aucune identité.
+- Une journée enregistrée conserve le détail des appareils. Forme applicative :
   ```ts
   interface SavedDay {
-    id: string;           // identifiant local (timestamp ou uuid)
+    id: string;           // uuid (généré DB)
+    anonId: string;       // identifiant anonyme propriétaire
     savedAt: string;      // ISO
     intensityAtSave: number;  // gCO2eq/kWh figée à l'enregistrement
     totalGco2eq: number;      // somme des empreintes des appareils
@@ -166,15 +176,26 @@ L'application ne tombe jamais en panne visible.
 - Le détail des appareils est conservé pour qu'une journée puisse être
   **rouverte et modifiée** (ré-ajouter un appareil, changer une durée).
 - L'intensité est figée **au moment de l'enregistrement** (`intensityAtSave`) :
-  on ne recalcule jamais une journée passée avec l'intensité du jour. Une
-  journée enregistrée reflète les conditions du réseau de l'époque.
-- Appareil personnalisé : saisi par l'utilisateur en **watts**
-  (étiquette de l'appareil), converti en kWh/h via `watts / 1000`. La
-  conversion est de la logique métier → elle vit dans `carbonCalculator.ts`,
-  jamais dans le composant.
-- `totalGco2eq` = somme des `gco2eq` des appareils actifs. Le calcul de la
-  somme passe par le skill métier (helper dédié), pas inline dans le front.
-- Aucune donnée personnelle stockée (pas de nom, e-mail, ni identifiant tiers).
+  on ne recalcule jamais une journée passée avec l'intensité du jour.
+- Appareil personnalisé : saisi en **watts** (étiquette de l'appareil),
+  converti en kWh/h via `watts / 1000`. Conversion = logique métier → vit dans
+  `carbonCalculator.ts`, jamais dans le composant.
+- `totalGco2eq` = somme des `gco2eq` des appareils actifs, via le helper du
+  skill métier, pas inline dans le front.
+
+### Sécurité Supabase (CRITIQUE — à ne jamais casser)
+- La clé `service_role` ne quitte JAMAIS le serveur (routes API uniquement).
+  Elle ne doit jamais figurer dans un composant client ni dans le bundle.
+- Le front utilise au plus la clé `anon` (publique) ; tout accès aux journées
+  passe par les routes API d'EcoPulse, jamais par un appel Supabase direct
+  depuis le navigateur.
+- Row Level Security (RLS) activée sur la table : une ligne n'est lisible que
+  pour son `anon_id`. La clé est passée par le serveur, jamais par le client.
+
+### Cache carbone — hors périmètre J3 (évolution prévue)
+- Le cache de l'`apiFetcher` reste **en mémoire** pour le J3 (suffisant pour la
+  démo). Le porter en DB (table `carbon_cache` avec `expires_at` partagé entre
+  instances) est une évolution identifiée mais NON livrée au J3.
 
 ---
 

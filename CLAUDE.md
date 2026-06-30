@@ -7,8 +7,10 @@ Dashboard mono-page pour le grand public soucieux de son empreinte numérique : 
 - **Langage** : TypeScript (mode `strict`)
 - **Framework front** : Next.js 14+ (App Router)
 - **Framework back** : Next.js API Routes (App Router, `route.ts`)
-- **DB** : LocalStorage (par défaut, projet solo 4 jours) — option Postgres via Supabase/Neon si une vraie couche DB devient nécessaire
-- **Auth** : pas d'auth (API RTE publique, pas de données utilisateur sensibles)
+- **DB** : Supabase (Postgres managé) pour les journées enregistrées, via une
+  interface `StorageAdapter` (src/lib/storage/). Cache carbone : en mémoire (J3).
+- **Auth** : pas d'auth ni de compte. Appartenance des journées via un UUID
+  anonyme en cookie (`ecopulse_anon_id`), appliqué par RLS Postgres.
 - **Styling** : Tailwind CSS + Shadcn/ui
 - **Tests** : Vitest
 

@@ -125,11 +125,35 @@ Règles de dépendance :
 
 ---
 
-## 6. Points d'extension prévus
+## 6. Couche de stockage (`src/lib/storage/`)
 
-- **OAuth2 RTE** : si bascule vers `data.rte-france.com`, n'impacte que les
-  `headers`/`init` passés à `fetchValidated`. Le reste du pipeline est inchangé.
-- **DB réelle** (Supabase/Neon) : remplacerait LocalStorage pour les
-  simulations ; introduire une couche `src/lib/storage/` sans toucher au métier.
-- **Vue régionale** : `eco2mix-regional-tr` suit le même contrat → ajouter un
-  paramètre de région au fetcher et un schéma Zod dédié.
+Introduite au J3. Le front et les routes API ne connaissent que l'interface
+`StorageAdapter` (`storageAdapter.ts`), jamais l'implémentation concrète.
+
+```
+Front (composants)
+  → routes API EcoPulse  (positionnent l'anon_id, portent la clé service_role)
+    → StorageAdapter (interface)
+        └─ SupabaseAdapter   ← seule implémentation au J3
+        └─ LocalStorageAdapter  ← extension future, non livrée
+                                   (hors-ligne ; même interface)
+```
+
+Règles :
+- Le front n'appelle JAMAIS Supabase directement : il passe par les routes API,
+  qui seules détiennent la clé `service_role` et positionnent l'`anon_id`.
+- Ajouter un adaptateur (ex. hors-ligne) = une classe de plus implémentant
+  `StorageAdapter` ; aucune route ni composant ne change.
+- Pas d'auth : l'appartenance d'une journée est portée par un UUID anonyme en
+  cookie (`ecopulse_anon_id`), appliqué par RLS côté Postgres.
+
+## 7. Points d'extension prévus
+
+- **Cache carbone en DB** : porter le cache mémoire de l'`apiFetcher` vers une
+  table `carbon_cache` (TTL partagé entre instances). Identifié, non livré J3.
+- **OAuth2 RTE** : bascule vers `data.rte-france.com` → n'impacte que les
+  `headers`/`init` de `fetchValidated`. Pipeline inchangé.
+- **LocalStorageAdapter hors-ligne** : seconde implémentation de
+  `StorageAdapter`, sans impact sur le reste.
+- **Vue régionale** : `eco2mix-regional-tr` suit le même contrat → paramètre de
+  région au fetcher + schéma Zod dédié.
