@@ -13,6 +13,7 @@ export interface RtePoint {
 function extractTimestamp(record: Record<string, unknown>): string | undefined {
   if (typeof record.date_heure === "string") return record.date_heure;
   if (typeof record.timestamp === "string") return record.timestamp;
+  if (typeof record.datetime === "string") return record.datetime;
   if (typeof record.date === "string" && typeof record.heure === "string") {
     return `${record.date}T${record.heure}`;
   }
@@ -33,7 +34,10 @@ function toNumber(value: unknown): number | undefined {
 
 function extractCo2(record: Record<string, unknown>): number | undefined {
   return (
-    toNumber(record.taux_co2) ?? toNumber(record.value) ?? toNumber(record.co2)
+    toNumber(record.taux_co2) ??
+    toNumber(record.value) ??
+    toNumber(record.co2) ??
+    toNumber(record.carbonIntensity)
   );
 }
 
@@ -44,10 +48,12 @@ function formatTime(date: Date): string {
 }
 
 /**
- * Nettoie et standardise un flux brut RTE : extrait horodatage + taux de CO2
- * (plusieurs noms de champs possibles selon la source), écarte les points
- * absents/non numériques/hors plage plausible/hors fenêtre 24h, et trie le
- * résultat par ordre chronologique croissant.
+ * Nettoie et standardise un flux brut de données d'intensité carbone réseau,
+ * quelle que soit la source (RTE/ODRÉ ou Electricity Maps) : extrait
+ * horodatage + taux de CO2 (plusieurs noms de champs possibles selon la
+ * source), écarte les points absents/non numériques/hors plage
+ * plausible/hors fenêtre 24h, et trie le résultat par ordre chronologique
+ * croissant.
  */
 export function parseRteData(raw: unknown): RtePoint[] {
   if (!Array.isArray(raw)) {
