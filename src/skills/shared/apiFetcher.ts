@@ -27,6 +27,27 @@ export interface FetchValidatedOptions<T> {
   cacheTtlMs?: number;
 }
 
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit | undefined,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function readCache<T>(url: string, schema: z.ZodType<T>, cacheTtlMs: number): T | undefined {
+  if (cacheTtlMs <= 0) return undefined;
+  const cached = cache.get(url);
+  if (!cached || cached.expiresAt <= Date.now()) return undefined;
+  return schema.parse(cached.payload);
+}
+
 /**
  * Récupère une ressource JSON et valide sa forme via un schéma Zod avant de la
  * retourner. Gère un timeout réseau, un cache mémoire à durée de vie limitée
@@ -40,24 +61,11 @@ export async function fetchValidated<T>(
 ): Promise<T> {
   const { init, fallback, timeoutMs = 8000, cacheTtlMs = 0 } = options;
 
-  if (cacheTtlMs > 0) {
-    const cached = cache.get(url);
-    if (cached && cached.expiresAt > Date.now()) {
-      return schema.parse(cached.payload);
-    }
-  }
+  const cached = readCache(url, schema, cacheTtlMs);
+  if (cached !== undefined) return cached;
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-    let response: Response;
-    try {
-      response = await fetch(url, { ...init, signal: controller.signal });
-    } finally {
-      clearTimeout(timeoutId);
-    }
-
+    const response = await fetchWithTimeout(url, init, timeoutMs);
     if (!response.ok) {
       throw new ApiFetchError(
         `Request to ${url} failed with status ${response.status}`,
