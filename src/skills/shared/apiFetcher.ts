@@ -10,21 +10,54 @@ export class ApiFetchError extends Error {
   }
 }
 
+interface CacheEntry {
+  payload: unknown;
+  expiresAt: number;
+}
+
+const cache = new Map<string, CacheEntry>();
+
+export interface FetchValidatedOptions<T> {
+  init?: RequestInit;
+  /** Donnée de repli, validée puis retournée si la requête échoue. */
+  fallback?: T;
+  /** Délai avant abandon de la requête réseau. */
+  timeoutMs?: number;
+  /** Durée de vie du cache mémoire pour cette URL ; 0 désactive le cache. */
+  cacheTtlMs?: number;
+}
+
 /**
  * Récupère une ressource JSON et valide sa forme via un schéma Zod avant de la
- * retourner. Si le réseau est indisponible ou si la réponse ne correspond pas au
- * schéma, et qu'une donnée de repli `fallback` est fournie, celle-ci est retournée
- * à la place — validée elle aussi, pour garantir qu'elle reste propre et exploitable
- * par le reste de l'application.
+ * retourner. Gère un timeout réseau, un cache mémoire à durée de vie limitée
+ * (clé = URL), et une donnée de repli (elle aussi validée) si le réseau est
+ * indisponible ou si la réponse ne correspond pas au schéma.
  */
-export async function fetchJson<T>(
+export async function fetchValidated<T>(
   url: string,
   schema: z.ZodType<T>,
-  init?: RequestInit,
-  fallback?: T
+  options: FetchValidatedOptions<T> = {}
 ): Promise<T> {
+  const { init, fallback, timeoutMs = 8000, cacheTtlMs = 0 } = options;
+
+  if (cacheTtlMs > 0) {
+    const cached = cache.get(url);
+    if (cached && cached.expiresAt > Date.now()) {
+      return schema.parse(cached.payload);
+    }
+  }
+
   try {
-    const response = await fetch(url, init);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    let response: Response;
+    try {
+      response = await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
     if (!response.ok) {
       throw new ApiFetchError(
         `Request to ${url} failed with status ${response.status}`,
@@ -38,6 +71,10 @@ export async function fetchJson<T>(
       throw new ApiFetchError(
         `Response from ${url} did not match the expected schema: ${result.error.message}`
       );
+    }
+
+    if (cacheTtlMs > 0) {
+      cache.set(url, { payload, expiresAt: Date.now() + cacheTtlMs });
     }
 
     return result.data;

@@ -1,51 +1,30 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { calculateEmissions, toKilograms } from "@/skills/business/carbonCalculator";
-import type { CarbonIntensityPoint } from "@/lib/types";
-
-const HISTORY_KEY = "ecopulse:simulation-history";
-const MAX_HISTORY_ENTRIES = 10;
-
-interface SimulationEntry {
-  id: string;
-  kWh: number;
-  gCO2PerKWh: number;
-  emissionsGrams: number;
-}
-
-function loadHistory(): SimulationEntry[] {
-  try {
-    const raw = window.localStorage.getItem(HISTORY_KEY);
-    return raw ? (JSON.parse(raw) as SimulationEntry[]) : [];
-  } catch {
-    return [];
-  }
-}
+import { CarbonBadge } from "@/components/carbon-badge";
+import { CarbonChart } from "@/components/carbon-chart";
+import { ImpactSimulator } from "@/components/impact-simulator";
+import { SavedDays } from "@/components/saved-days";
+import {
+  deleteSavedDay,
+  loadSavedDays,
+  saveSavedDay,
+  type SavedDay,
+} from "@/lib/storage";
+import type { CarbonLive } from "@/lib/rteSchema";
 
 export default function Home() {
-  const [points, setPoints] = useState<CarbonIntensityPoint[]>([]);
+  const [carbonLive, setCarbonLive] = useState<CarbonLive | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [kWhInput, setKWhInput] = useState("1");
-  const [history, setHistory] = useState<SimulationEntry[]>([]);
+  const [savedDays, setSavedDays] = useState<SavedDay[]>([]);
 
-  // Read from localStorage only after mount: the server has no access to it,
-  // so seeding this from the initial render would mismatch the SSR markup.
+  // Lu uniquement après montage : le serveur n'a pas accès au LocalStorage,
+  // donc l'initialiser dès le premier rendu casserait l'hydratation SSR.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time sync from localStorage, unreadable during SSR
-    setHistory(loadHistory());
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronisation ponctuelle depuis le LocalStorage, illisible côté SSR
+    setSavedDays(loadSavedDays());
   }, []);
 
   useEffect(() => {
@@ -53,10 +32,10 @@ export default function Home() {
     fetch("/api/carbon/live")
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json() as Promise<CarbonIntensityPoint[]>;
+        return response.json() as Promise<CarbonLive>;
       })
       .then((data) => {
-        if (isMounted) setPoints(data);
+        if (isMounted) setCarbonLive(data);
       })
       .catch((error: Error) => {
         if (isMounted) setLoadError(error.message);
@@ -69,34 +48,12 @@ export default function Home() {
     };
   }, []);
 
-  const latest = points.at(-1);
+  function handleSaveDay(day: SavedDay): void {
+    setSavedDays(saveSavedDay(day));
+  }
 
-  const chartData = useMemo(
-    () =>
-      points.map((point) => ({
-        time: new Date(point.timestamp).toLocaleTimeString("fr-FR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        gCO2PerKWh: point.gCO2PerKWh,
-      })),
-    [points]
-  );
-
-  function handleSimulate() {
-    const kWh = Number(kWhInput);
-    if (!latest || !Number.isFinite(kWh) || kWh < 0) return;
-
-    const entry: SimulationEntry = {
-      id: crypto.randomUUID(),
-      kWh,
-      gCO2PerKWh: latest.gCO2PerKWh,
-      emissionsGrams: calculateEmissions(kWh, latest.gCO2PerKWh),
-    };
-
-    const next = [entry, ...history].slice(0, MAX_HISTORY_ENTRIES);
-    setHistory(next);
-    window.localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+  function handleDeleteDay(id: string): void {
+    setSavedDays(deleteSavedDay(id));
   }
 
   return (
@@ -105,33 +62,26 @@ export default function Home() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Intensité carbone du réseau (gCO2eq/kWh)</CardTitle>
+          <CardTitle>Intensité carbone du réseau</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading && <p>Chargement...</p>}
           {loadError && <p className="text-destructive">Erreur : {loadError}</p>}
-          {!isLoading && !loadError && (
-            <>
-              <p className="mb-4 text-3xl font-semibold">
-                {latest ? `${latest.gCO2PerKWh} gCO2eq/kWh` : "—"}
-              </p>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line
-                      type="monotone"
-                      dataKey="gCO2PerKWh"
-                      stroke="#16a34a"
-                      dot={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </>
+          {carbonLive && <CarbonBadge current={carbonLive.current} />}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Évolution sur 24 h</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {carbonLive && (
+            <CarbonChart
+              history={carbonLive.history}
+              stats={carbonLive.stats}
+              source={carbonLive.source}
+            />
           )}
         </CardContent>
       </Card>
@@ -140,32 +90,22 @@ export default function Home() {
         <CardHeader>
           <CardTitle>Simulateur d&apos;impact</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              value={kWhInput}
-              onChange={(event) => setKWhInput(event.target.value)}
-              className="w-32 rounded border px-2 py-1"
+        <CardContent>
+          {carbonLive && (
+            <ImpactSimulator
+              currentIntensity={carbonLive.current.co2}
+              onSave={handleSaveDay}
             />
-            <span>kWh</span>
-            <Button onClick={handleSimulate} disabled={!latest}>
-              Calculer l&apos;impact
-            </Button>
-          </div>
-
-          {history.length > 0 && (
-            <ul className="flex flex-col gap-1 text-sm">
-              {history.map((entry) => (
-                <li key={entry.id}>
-                  {entry.kWh} kWh × {entry.gCO2PerKWh} gCO2eq/kWh ={" "}
-                  {toKilograms(entry.emissionsGrams).toFixed(2)} kg CO2eq
-                </li>
-              ))}
-            </ul>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Journées enregistrées</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SavedDays days={savedDays} onDelete={handleDeleteDay} />
         </CardContent>
       </Card>
     </main>

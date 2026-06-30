@@ -1,48 +1,56 @@
 import { NextResponse } from "next/server";
-import { fetchJson, ApiFetchError } from "@/skills/shared/apiFetcher";
+import { fetchValidated, ApiFetchError } from "@/skills/shared/apiFetcher";
+import { parseRteData } from "@scripts/deterministic/parseRteData";
 import {
-  parseRteData,
+  classifyGridIntensity,
+  summarizeHistory,
+} from "@/skills/business/carbonCalculator";
+import {
   RteApiResponseSchema,
-  type RteApiResponse,
-} from "@scripts/deterministic/parseRteData";
+  carbonLiveSchema,
+  type CarbonLive,
+} from "@/lib/rteSchema";
+import { RTE_CACHE_TTL_MS, RTE_FETCH_TIMEOUT_MS } from "@/config/rte-fetch";
+import { RTE_FALLBACK } from "@/config/rte-fallback";
 
+// L'API v2.1 plafonne `limit` à 100 (au-delà : HTTP 400 InvalidRESTParameterError).
+// 100 points à 15 min d'intervalle couvre déjà ~25h, suffisant pour la fenêtre 24h.
 const RTE_ECO2MIX_URL =
-  "https://odre.opendatasoft.com/api/records/1.0/search/?dataset=eco2mix-national-tr&rows=50&sort=-date_heure";
+  "https://odre.opendatasoft.com/api/explore/v2.1/catalog/datasets/eco2mix-national-tr/records?limit=100&order_by=date_heure%20desc";
 
-const FALLBACK_INTERVAL_MINUTES = 15;
-// Valeurs plausibles de taux_co2 (gCO2eq/kWh) pour le mix électrique français,
-// utilisées uniquement si l'API RTE est inaccessible.
-const FALLBACK_TAUX_CO2 = [52, 49, 47, 50, 55, 58];
+export const revalidate = 900;
 
-function buildFallbackRteData(): RteApiResponse {
-  const now = Date.now();
-  return {
-    records: FALLBACK_TAUX_CO2.map((taux_co2, index) => ({
-      fields: {
-        date_heure: new Date(
-          now -
-            (FALLBACK_TAUX_CO2.length - index) *
-              FALLBACK_INTERVAL_MINUTES *
-              60_000
-        ).toISOString(),
-        taux_co2,
-      },
-    })),
-  };
-}
+export async function GET(): Promise<NextResponse> {
+  let history = RTE_FALLBACK;
+  let source: CarbonLive["source"] = "fallback";
 
-export async function GET() {
   try {
-    const raw = await fetchJson(
-      RTE_ECO2MIX_URL,
-      RteApiResponseSchema,
-      { next: { revalidate: 60 } },
-      buildFallbackRteData()
-    );
-    return NextResponse.json(parseRteData(raw));
+    const raw = await fetchValidated(RTE_ECO2MIX_URL, RteApiResponseSchema, {
+      timeoutMs: RTE_FETCH_TIMEOUT_MS,
+      cacheTtlMs: RTE_CACHE_TTL_MS,
+    });
+    const cleaned = parseRteData(raw.results);
+    if (cleaned.length > 0) {
+      history = cleaned;
+      source = "live";
+    }
   } catch (error) {
-    const message =
-      error instanceof ApiFetchError ? error.message : "Unexpected error";
-    return NextResponse.json({ error: message }, { status: 502 });
+    if (!(error instanceof ApiFetchError)) {
+      throw error;
+    }
   }
+
+  const latest = history.at(-1)!;
+  const body: CarbonLive = {
+    current: {
+      co2: latest.co2,
+      time: latest.time,
+      classification: classifyGridIntensity(latest.co2),
+    },
+    history,
+    stats: summarizeHistory(history),
+    source,
+  };
+
+  return NextResponse.json(carbonLiveSchema.parse(body), { status: 200 });
 }
