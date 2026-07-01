@@ -5,6 +5,7 @@ import { CarbonBadge } from "@/components/carbon-badge";
 import { CarbonChart } from "@/components/carbon-chart";
 import { ImpactSimulator } from "@/components/impact-simulator";
 import { SavedDays } from "@/components/saved-days";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { useCarbonLive } from "@/hooks/useCarbonLive";
 import { useSavedDays } from "@/hooks/useSavedDays";
 
@@ -69,34 +70,40 @@ export default function Home() {
           </Panel>
 
           <Panel title="Évolution sur 24 h">
-            {carbonLive && (
-              <CarbonChart
-                history={carbonLive.history}
-                stats={carbonLive.stats}
-                source={carbonLive.source}
-              />
-            )}
+            <ErrorBoundary label="Graphique 24h">
+              {carbonLive && (
+                <CarbonChart
+                  history={carbonLive.history}
+                  stats={carbonLive.stats}
+                  source={carbonLive.source}
+                />
+              )}
+            </ErrorBoundary>
           </Panel>
         </div>
 
         <div className="flex flex-col gap-4">
           <Panel title="Simulateur d'impact" muted>
-            {carbonLive && (
-              <ImpactSimulator
-                currentIntensity={carbonLive.current.co2}
-                onSaved={refreshSavedDays}
-              />
-            )}
+            <ErrorBoundary label="Simulateur">
+              {carbonLive && (
+                <ImpactSimulator
+                  currentIntensity={carbonLive.current.co2}
+                  onSaved={refreshSavedDays}
+                />
+              )}
+            </ErrorBoundary>
           </Panel>
 
           <Panel title="Journées enregistrées" muted>
-            {savedDaysError && (
-              <p className="font-mono text-xs text-red-500">
-                {"// Erreur : "}
-                {savedDaysError}
-              </p>
-            )}
-            <SavedDays days={savedDays} onDeleted={refreshSavedDays} />
+            <ErrorBoundary label="Journées enregistrées">
+              {savedDaysError && (
+                <p className="font-mono text-xs text-red-500">
+                  {"// Erreur : "}
+                  {savedDaysError}
+                </p>
+              )}
+              <SavedDays days={savedDays} onDeleted={refreshSavedDays} />
+            </ErrorBoundary>
           </Panel>
         </div>
       </div>

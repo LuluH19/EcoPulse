@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { fetchOk } from "@/lib/fetchOk";
-import type { CarbonLive } from "@/lib/carbonSchema";
+import { carbonLiveSchema, type CarbonLive } from "@/lib/carbonSchema";
+import { ValidationError } from "@/lib/errors";
 
 interface UseCarbonLive {
   carbonLive: CarbonLive | null;
@@ -19,9 +20,15 @@ export function useCarbonLive(): UseCarbonLive {
   useEffect(() => {
     let isMounted = true;
     fetchOk("/api/carbon/live")
-      .then((response) => response.json() as Promise<CarbonLive>)
-      .then((data) => {
-        if (isMounted) setCarbonLive(data);
+      .then((response) => response.json() as Promise<unknown>)
+      .then((payload) => {
+        const result = carbonLiveSchema.safeParse(payload);
+        if (!result.success) {
+          throw new ValidationError(
+            `Réponse /api/carbon/live invalide : ${result.error.message}`
+          );
+        }
+        if (isMounted) setCarbonLive(result.data);
       })
       .catch((error: Error) => {
         if (isMounted) setLoadError(error.message);

@@ -1,11 +1,11 @@
 import { z } from "zod";
+import { AppError } from "@/lib/errors";
 
-export class ApiFetchError extends Error {
+export class ApiFetchError extends AppError {
   readonly status?: number;
 
   constructor(message: string, status?: number) {
-    super(message);
-    this.name = "ApiFetchError";
+    super(message, "ERR_API_FETCH");
     this.status = status;
   }
 }
