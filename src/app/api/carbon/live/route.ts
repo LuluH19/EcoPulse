@@ -30,9 +30,10 @@ async function fetchLiveCarbonIntensity(): Promise<CarbonPoint[]> {
   if (!apiKey) return [];
 
   const url = `${ELECTRICITY_MAPS_HISTORY_URL}?zone=${ELECTRICITY_MAPS_ZONE}`;
+  const init: RequestInit = { headers: { "auth-token": apiKey } };
   try {
     const raw = await fetchValidated(url, ElectricityMapsHistorySchema, {
-      init: { headers: { "auth-token": apiKey } },
+      init,
       timeoutMs: ELECTRICITY_MAPS_TIMEOUT_MS,
       cacheTtlMs: ELECTRICITY_MAPS_CACHE_TTL_MS,
     });

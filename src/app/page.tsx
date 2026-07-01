@@ -1,60 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CarbonBadge } from "@/components/carbon-badge";
 import { CarbonChart } from "@/components/carbon-chart";
 import { ImpactSimulator } from "@/components/impact-simulator";
 import { SavedDays } from "@/components/saved-days";
-import type { SavedDay } from "@/lib/storage/storageAdapter";
-import type { CarbonLive } from "@/lib/carbonSchema";
+import { useCarbonLive } from "@/hooks/useCarbonLive";
+import { useSavedDays } from "@/hooks/useSavedDays";
 
 export default function Home() {
-  const [carbonLive, setCarbonLive] = useState<CarbonLive | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [savedDays, setSavedDays] = useState<SavedDay[]>([]);
-  const [savedDaysError, setSavedDaysError] = useState<string | null>(null);
-
-  const refreshSavedDays = useCallback(() => {
-    fetch("/api/days")
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json() as Promise<SavedDay[]>;
-      })
-      .then((data) => {
-        setSavedDays(data);
-        setSavedDaysError(null);
-      })
-      .catch((error: Error) => {
-        setSavedDaysError(error.message);
-      });
-  }, []);
-
-  useEffect(() => {
-    refreshSavedDays();
-  }, [refreshSavedDays]);
-
-  useEffect(() => {
-    let isMounted = true;
-    fetch("/api/carbon/live")
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json() as Promise<CarbonLive>;
-      })
-      .then((data) => {
-        if (isMounted) setCarbonLive(data);
-      })
-      .catch((error: Error) => {
-        if (isMounted) setLoadError(error.message);
-      })
-      .finally(() => {
-        if (isMounted) setIsLoading(false);
-      });
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  const { carbonLive, isLoading, loadError } = useCarbonLive();
+  const { savedDays, savedDaysError, refreshSavedDays } = useSavedDays();
 
   return (
     <main className="mx-auto flex max-w-4xl flex-col gap-6 p-6">

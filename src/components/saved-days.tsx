@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { fetchOk } from "@/lib/fetchOk";
 import { toKilograms } from "@/skills/business/carbonCalculator";
 import type { SavedDay } from "@/lib/storage/storageAdapter";
 
@@ -27,10 +28,7 @@ export function SavedDays({ days, onDeleted }: SavedDaysProps) {
     setDeletingId(id);
     setDeleteError(null);
     try {
-      const response = await fetch(`/api/days/${id}`, { method: "DELETE" });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
+      await fetchOk(`/api/days/${id}`, { method: "DELETE" });
       onDeleted();
     } catch (error) {
       console.error("[saved-days] failed to delete day", error);

@@ -48,6 +48,30 @@ function readCache<T>(url: string, schema: z.ZodType<T>, cacheTtlMs: number): T 
   return schema.parse(cached.payload);
 }
 
+/** Vérifie le statut HTTP puis valide le corps via le schéma Zod. */
+async function parseValidatedResponse<T>(
+  url: string,
+  response: Response,
+  schema: z.ZodType<T>
+): Promise<T> {
+  if (!response.ok) {
+    throw new ApiFetchError(
+      `Request to ${url} failed with status ${response.status}`,
+      response.status
+    );
+  }
+
+  const payload: unknown = await response.json();
+  const result = schema.safeParse(payload);
+  if (!result.success) {
+    throw new ApiFetchError(
+      `Response from ${url} did not match the expected schema: ${result.error.message}`
+    );
+  }
+
+  return result.data;
+}
+
 /**
  * Récupère une ressource JSON et valide sa forme via un schéma Zod avant de la
  * retourner. Gère un timeout réseau, un cache mémoire à durée de vie limitée
@@ -66,26 +90,13 @@ export async function fetchValidated<T>(
 
   try {
     const response = await fetchWithTimeout(url, init, timeoutMs);
-    if (!response.ok) {
-      throw new ApiFetchError(
-        `Request to ${url} failed with status ${response.status}`,
-        response.status
-      );
-    }
-
-    const payload: unknown = await response.json();
-    const result = schema.safeParse(payload);
-    if (!result.success) {
-      throw new ApiFetchError(
-        `Response from ${url} did not match the expected schema: ${result.error.message}`
-      );
-    }
+    const data = await parseValidatedResponse(url, response, schema);
 
     if (cacheTtlMs > 0) {
-      cache.set(url, { payload, expiresAt: Date.now() + cacheTtlMs });
+      cache.set(url, { payload: data, expiresAt: Date.now() + cacheTtlMs });
     }
 
-    return result.data;
+    return data;
   } catch (error) {
     if (fallback === undefined) {
       throw error instanceof ApiFetchError
