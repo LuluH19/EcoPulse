@@ -2,15 +2,17 @@
 
 import { useState, type Dispatch, type SetStateAction } from "react";
 import {
-  computeCarbonFootprint,
   computeUsageFootprint,
   sumFootprints,
-  wattsToKwhPerHour,
   type CarbonResult,
 } from "@/skills/business/carbonCalculator";
 import { USAGE_PROFILES, type UsageKey } from "@/config/usage-profiles";
-import { DURATION_SLIDER_BOUNDS } from "@/config/duration-slider";
 import { fetchOk } from "@/lib/fetchOk";
+import {
+  useCustomDevices,
+  type ActiveEntry,
+  type CustomDevice,
+} from "@/hooks/useCustomDevices";
 import type { NewSavedDay } from "@/lib/storage/storageAdapter";
 
 export const CATALOG_KEYS = Object.keys(USAGE_PROFILES) as UsageKey[];
@@ -18,22 +20,6 @@ export const CATALOG_KEYS = Object.keys(USAGE_PROFILES) as UsageKey[];
 interface CatalogState {
   active: boolean;
   hours: number;
-}
-
-export interface CustomDevice {
-  id: string;
-  label: string;
-  watts: number;
-  hours: number;
-  active: boolean;
-}
-
-interface ActiveEntry {
-  label: string;
-  kwhPerHour: number;
-  hours: number;
-  result: CarbonResult;
-  custom: boolean;
 }
 
 interface UseImpactSimulator {
@@ -65,9 +51,9 @@ function createInitialCatalogState(): Record<UsageKey, CatalogState> {
 }
 
 /**
- * Logique du simulateur d'impact : état du catalogue et des appareils
- * personnalisés, empreintes dérivées (via `carbonCalculator`) et sauvegarde.
- * Le composant ne fait plus que du rendu.
+ * Logique du simulateur d'impact : état du catalogue, composition des appareils
+ * personnalisés (`useCustomDevices`), empreintes dérivées (via `carbonCalculator`)
+ * et sauvegarde. Le composant ne fait plus que du rendu.
  */
 export function useImpactSimulator(
   currentIntensity: number,
@@ -76,12 +62,9 @@ export function useImpactSimulator(
   const [catalogState, setCatalogState] = useState<
     Record<UsageKey, CatalogState>
   >(createInitialCatalogState);
-  const [customDevices, setCustomDevices] = useState<CustomDevice[]>([]);
-  const [isAdding, setIsAdding] = useState(false);
-  const [newLabel, setNewLabel] = useState("");
-  const [newWatts, setNewWatts] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const custom = useCustomDevices(currentIntensity);
 
   const catalogEntries: ActiveEntry[] = CATALOG_KEYS.filter(
     (key) => catalogState[key].active
@@ -96,23 +79,7 @@ export function useImpactSimulator(
     };
   });
 
-  const customEntries: ActiveEntry[] = customDevices
-    .filter((device) => device.active)
-    .map((device) => {
-      const kwhPerHour = wattsToKwhPerHour(device.watts);
-      return {
-        label: device.label,
-        kwhPerHour,
-        hours: device.hours,
-        result: computeCarbonFootprint(
-          kwhPerHour * device.hours,
-          currentIntensity
-        ),
-        custom: true,
-      };
-    });
-
-  const activeEntries = [...catalogEntries, ...customEntries];
+  const activeEntries = [...catalogEntries, ...custom.customEntries];
   const total = sumFootprints(activeEntries.map((entry) => entry.result));
 
   function toggleCatalog(key: UsageKey, active: boolean): void {
@@ -121,40 +88,6 @@ export function useImpactSimulator(
 
   function setCatalogHours(key: UsageKey, hours: number): void {
     setCatalogState((prev) => ({ ...prev, [key]: { ...prev[key], hours } }));
-  }
-
-  function toggleCustom(id: string, active: boolean): void {
-    setCustomDevices((prev) =>
-      prev.map((device) => (device.id === id ? { ...device, active } : device))
-    );
-  }
-
-  function setCustomHours(id: string, hours: number): void {
-    setCustomDevices((prev) =>
-      prev.map((device) => (device.id === id ? { ...device, hours } : device))
-    );
-  }
-
-  function removeCustom(id: string): void {
-    setCustomDevices((prev) => prev.filter((device) => device.id !== id));
-  }
-
-  function handleAddDevice(): void {
-    const watts = Number(newWatts);
-    if (!newLabel.trim() || !Number.isFinite(watts) || watts < 0) return;
-    setCustomDevices((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        label: newLabel.trim(),
-        watts,
-        hours: DURATION_SLIDER_BOUNDS.min + DURATION_SLIDER_BOUNDS.step,
-        active: true,
-      },
-    ]);
-    setNewLabel("");
-    setNewWatts("");
-    setIsAdding(false);
   }
 
   async function handleSave(): Promise<void> {
@@ -191,23 +124,23 @@ export function useImpactSimulator(
 
   return {
     catalogState,
-    customDevices,
-    isAdding,
-    setIsAdding,
-    newLabel,
-    setNewLabel,
-    newWatts,
-    setNewWatts,
+    customDevices: custom.customDevices,
+    isAdding: custom.isAdding,
+    setIsAdding: custom.setIsAdding,
+    newLabel: custom.newLabel,
+    setNewLabel: custom.setNewLabel,
+    newWatts: custom.newWatts,
+    setNewWatts: custom.setNewWatts,
     isSaving,
     saveError,
     activeEntries,
     total,
     toggleCatalog,
     setCatalogHours,
-    toggleCustom,
-    setCustomHours,
-    removeCustom,
-    handleAddDevice,
+    toggleCustom: custom.toggleCustom,
+    setCustomHours: custom.setCustomHours,
+    removeCustom: custom.removeCustom,
+    handleAddDevice: custom.handleAddDevice,
     handleSave,
   };
 }
