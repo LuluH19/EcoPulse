@@ -7,6 +7,7 @@ import {
   type CarbonResult,
 } from "@/skills/business/carbonCalculator";
 import { DURATION_SLIDER_BOUNDS } from "@/config/duration-slider";
+import { sanitizeDeviceInput } from "@/lib/deviceInputSchema";
 
 export interface CustomDevice {
   id: string;
@@ -33,6 +34,7 @@ interface UseCustomDevices {
   setNewLabel: Dispatch<SetStateAction<string>>;
   newWatts: string;
   setNewWatts: Dispatch<SetStateAction<string>>;
+  addError: string | null;
   toggleCustom: (id: string, active: boolean) => void;
   setCustomHours: (id: string, hours: number) => void;
   removeCustom: (id: string) => void;
@@ -48,6 +50,7 @@ export function useCustomDevices(currentIntensity: number): UseCustomDevices {
   const [isAdding, setIsAdding] = useState(false);
   const [newLabel, setNewLabel] = useState("");
   const [newWatts, setNewWatts] = useState("");
+  const [addError, setAddError] = useState<string | null>(null);
 
   const customEntries: ActiveEntry[] = customDevices
     .filter((device) => device.active)
@@ -82,14 +85,18 @@ export function useCustomDevices(currentIntensity: number): UseCustomDevices {
   }
 
   function handleAddDevice(): void {
-    const watts = Number(newWatts);
-    if (!newLabel.trim() || !Number.isFinite(watts) || watts < 0) return;
+    const result = sanitizeDeviceInput({ label: newLabel, watts: newWatts });
+    if (!result.success || !result.data) {
+      setAddError(result.error);
+      return;
+    }
+    setAddError(null);
     setCustomDevices((prev) => [
       ...prev,
       {
         id: crypto.randomUUID(),
-        label: newLabel.trim(),
-        watts,
+        label: result.data!.label,
+        watts: result.data!.watts,
         hours: DURATION_SLIDER_BOUNDS.min + DURATION_SLIDER_BOUNDS.step,
         active: true,
       },
@@ -108,6 +115,7 @@ export function useCustomDevices(currentIntensity: number): UseCustomDevices {
     setNewLabel,
     newWatts,
     setNewWatts,
+    addError,
     toggleCustom,
     setCustomHours,
     removeCustom,

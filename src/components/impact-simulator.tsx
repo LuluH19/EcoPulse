@@ -24,6 +24,7 @@ export function ImpactSimulator({
     setNewLabel,
     newWatts,
     setNewWatts,
+    addError,
     isSaving,
     saveError,
     activeEntries,
@@ -84,6 +85,9 @@ export function ImpactSimulator({
           <Button variant="ghost" onClick={() => setIsAdding(false)}>
             Annuler
           </Button>
+          {addError && (
+            <p className="w-full text-sm text-destructive">{addError}</p>
+          )}
         </div>
       ) : (
         <Button variant="outline" onClick={() => setIsAdding(true)}>

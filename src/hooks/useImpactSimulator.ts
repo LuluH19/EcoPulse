@@ -31,6 +31,7 @@ interface UseImpactSimulator {
   setNewLabel: Dispatch<SetStateAction<string>>;
   newWatts: string;
   setNewWatts: Dispatch<SetStateAction<string>>;
+  addError: string | null;
   isSaving: boolean;
   saveError: string | null;
   activeEntries: ActiveEntry[];
@@ -131,6 +132,7 @@ export function useImpactSimulator(
     setNewLabel: custom.setNewLabel,
     newWatts: custom.newWatts,
     setNewWatts: custom.setNewWatts,
+    addError: custom.addError,
     isSaving,
     saveError,
     activeEntries,

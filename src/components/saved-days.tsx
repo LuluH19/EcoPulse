@@ -40,30 +40,34 @@ export function SavedDays({ days, onDeleted }: SavedDaysProps) {
 
   if (days.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        Aucune journée enregistrée pour l&apos;instant.
+      <p className="font-mono text-xs uppercase tracking-wider text-slate-400">
+        {"// Aucune donnée enregistrée pour l'instant."}
       </p>
     );
   }
 
   return (
     <div className="flex flex-col gap-2">
-      {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
+      {deleteError && (
+        <p className="font-mono text-xs text-red-500">{"// "}{deleteError}</p>
+      )}
       <ul className="flex flex-col gap-2">
         {days.map((day) => (
           <li
             key={day.id}
-            className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3 text-sm"
+            className="flex flex-wrap items-center justify-between gap-2 border border-slate-200 p-3 text-sm"
           >
             <div>
-              <p className="font-medium">
+              <p className="font-mono text-sm font-semibold tabular-nums text-slate-900">
                 {formatSavedAt(day.savedAt)} —{" "}
                 {toKilograms(day.totalGco2eq).toFixed(2)} kg CO₂eq
               </p>
-              <p className="text-muted-foreground">
-                Intensité au moment de l&apos;enregistrement :{" "}
-                {day.intensityAtSave} gCO₂eq/kWh · {day.devices.length}{" "}
-                appareil(s)
+              <p className="text-xs text-slate-500">
+                Intensité à l&apos;enregistrement :{" "}
+                <span className="font-mono tabular-nums text-slate-700">
+                  {day.intensityAtSave}
+                </span>{" "}
+                gCO₂eq/kWh · {day.devices.length} appareil(s)
               </p>
             </div>
             <Button

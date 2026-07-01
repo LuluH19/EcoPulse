@@ -35,8 +35,12 @@ export function CarbonBadge({ current }: CarbonBadgeProps) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-5xl font-bold">{current.co2}</span>
-        <span className="text-lg text-muted-foreground">gCO₂eq/kWh</span>
+        <span className="font-mono text-5xl font-bold tabular-nums text-slate-900">
+          {current.co2}
+        </span>
+        <span className="font-mono text-xs uppercase tracking-wider text-slate-500">
+          gCO₂eq/kWh
+        </span>
         <Badge className={meta.badgeClassName}>{meta.label}</Badge>
       </div>
       <p className="text-sm text-muted-foreground">

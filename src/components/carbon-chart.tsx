@@ -21,15 +21,30 @@ export function CarbonChart({ history, stats, source }: CarbonChartProps) {
   return (
     <div className="flex flex-col gap-3">
       {source === "fallback" && (
-        <p className="rounded-md bg-amber-100 px-3 py-2 text-sm text-amber-900">
+        <p className="border border-amber-200 bg-amber-50 px-3 py-2 font-mono text-xs text-amber-900">
           Données de secours — l&apos;API RTE est momentanément indisponible.
         </p>
       )}
 
-      <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-        <span>Min : {stats.min} gCO₂eq/kWh</span>
-        <span>Max : {stats.max} gCO₂eq/kWh</span>
-        <span>Moyenne : {stats.average} gCO₂eq/kWh</span>
+      <div className="flex flex-wrap gap-6 font-mono text-xs uppercase tracking-wider text-slate-500">
+        <span>
+          Min{" "}
+          <span className="font-semibold tabular-nums text-slate-900">
+            {stats.min}
+          </span>
+        </span>
+        <span>
+          Max{" "}
+          <span className="font-semibold tabular-nums text-slate-900">
+            {stats.max}
+          </span>
+        </span>
+        <span>
+          Moy{" "}
+          <span className="font-semibold tabular-nums text-slate-900">
+            {stats.average}
+          </span>
+        </span>
       </div>
 
       <div className="h-64 w-full">
